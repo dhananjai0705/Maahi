@@ -1,24 +1,24 @@
 # Python Dependencies for Maahi Robot Assistant
 # Install using: pip install -r requirements.txt
+# Fixed for Python 3.13 and Raspberry Pi 4
 
 # Core Libraries
-RPi.GPIO==0.7.0
-adafruit-circuitpython-ili9341==1.4.13
-adafruit-circuitpython-ads1x15==1.1.3
+RPi.GPIO>=0.7.1
+adafruit-circuitpython-ili9341==1.4.2
+adafruit-circuitpython-ads1x15==2.2.25
 
 # Voice & Speech
-SpeechRecognition==3.10.0
+SpeechRecognition==3.11.0
 pyttsx3==2.90
-pyaudio==0.2.13
 
 # AI & LLM
 groq==0.9.0
 python-dotenv==1.0.0
 
-# Media
-yt-dlp==2024.1.1
+# Media (using available versions on piwheels)
+yt-dlp>=2023.10.13
 ytmusicapi==1.3.0
-Pillow==10.0.0
+Pillow>=11.0.0
 opencv-python==4.8.1.78
 
 # Web Interface
@@ -28,13 +28,13 @@ requests==2.31.0
 
 # Utilities
 python-dateutil==2.8.2
-pytz==2023.3
+pytz>=2023.3
 
-# Optional but Recommended
-numpy==1.24.3
-scipy==1.11.2
+# Optional but Recommended (updated for Python 3.13)
+numpy>=2.0.0
+scipy>=1.14.0
 
 # Development Tools (optional)
-black==23.9.1
-pylint==2.17.5
-pytest==7.4.2
+black>=23.9.0
+pylint>=2.17.0
+pytest>=7.4.0

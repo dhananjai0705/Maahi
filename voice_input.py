@@ -1,10 +1,14 @@
 """
 Voice Input Module for Maahi Robot Assistant
 Handles microphone input, wake word detection, and voice-to-text conversion
+Uses ALSA (arecord) for microphone, processes with SpeechRecognition
 """
 
 import speech_recognition as sr
+import subprocess
 import logging
+import os
+import time
 from config import *
 
 logging.basicConfig(level=logging.INFO)
@@ -13,109 +17,179 @@ logger = logging.getLogger(__name__)
 
 class VoiceInput:
     """
-    Handles voice input from USB microphone
+    Handles voice input from USB microphone via ALSA
     Converts speech to text using Google's speech recognition API
+    Uses arecord instead of PyAudio for microphone access
     """
 
     def __init__(self):
         """Initialize voice recognizer"""
         self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
-        
-        # Adjust for ambient noise
-        with self.microphone as source:
-            self.recognizer.adjust_for_ambient_noise(source, duration=2)
-            logger.info("Microphone calibrated for ambient noise")
+        self.device = "hw:3,0"  # PCM2902 audio codec
+        self.temp_file = "/tmp/voice_input.wav"
+        logger.info("Voice input initialized (using ALSA)")
 
-    def listen_for_wake_word(self):
+    def _record_audio(self, duration=5):
         """
-        Listen continuously for wake word
-        Returns True when wake word is detected
-        """
-        logger.info(f"Listening for wake word: '{WAKE_WORD}'")
+        Record audio using arecord (ALSA)
         
-        with self.microphone as source:
-            try:
-                # Listen with timeout
-                audio = self.recognizer.listen(source, timeout=LISTEN_TIMEOUT)
+        Args:
+            duration (int): Recording duration in seconds
+            
+        Returns:
+            str: Path to recorded WAV file, or None if recording failed
+        """
+        try:
+            logger.info(f"Recording {duration} seconds from {self.device}...")
+            cmd = [
+                "arecord",
+                "-D", self.device,
+                "-f", "S16_LE",
+                "-c", "1",
+                "-r", "16000",
+                "-d", str(duration),
+                self.temp_file
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, timeout=duration + 5)
+            
+            if result.returncode == 0 and os.path.exists(self.temp_file):
+                file_size = os.path.getsize(self.temp_file)
+                logger.info(f"Audio recorded: {self.temp_file} ({file_size} bytes)")
+                return self.temp_file
+            else:
+                logger.error(f"Recording failed: {result.stderr.decode()}")
+                return None
                 
-                # Convert speech to text
-                text = self.recognizer.recognize_google(audio, language=VOICE_LANGUAGE)
-                logger.info(f"Heard: {text}")
-                
-                # Check if wake word is present in the text
-                if WAKE_WORD.lower() in text.lower():
-                    logger.info("Wake word detected!")
-                    return True
-                
-                return False
-                
-            except sr.UnknownValueError:
-                logger.debug("Could not understand audio")
-                return False
-            except sr.RequestError as e:
-                logger.error(f"Error with speech recognition service: {e}")
-                return False
-            except Exception as e:
-                logger.error(f"Error listening for wake word: {e}")
-                return False
+        except Exception as e:
+            logger.error(f"Error recording audio: {e}")
+            return None
 
-    def listen_for_command(self):
+    def _recognize_from_file(self, audio_file, max_retries=3):
         """
-        Listen for voice commands after wake word is detected
-        Returns the spoken text or None if not understood
-        """
-        logger.info("Listening for command...")
+        Recognize speech from a WAV file with retry logic
         
-        with self.microphone as source:
+        Args:
+            audio_file (str): Path to WAV file
+            max_retries (int): Number of retry attempts
+            
+        Returns:
+            str: Recognized text, or None if recognition failed
+        """
+        for attempt in range(max_retries):
             try:
-                # Listen for command with timeout
-                audio = self.recognizer.listen(source, timeout=LISTEN_TIMEOUT)
+                logger.info(f"Recognizing speech (attempt {attempt + 1}/{max_retries})...")
                 
-                # Convert speech to text
-                text = self.recognizer.recognize_google(audio, language=VOICE_LANGUAGE)
-                logger.info(f"Command received: {text}")
+                with sr.AudioFile(audio_file) as source:
+                    audio = self.recognizer.record(source)
                 
-                # Check if user said close word
-                if CLOSE_WORD.lower() in text.lower():
-                    logger.info("Close word detected - shutting down")
-                    return CLOSE_WORD
-                
+                text = self.recognizer.recognize_google(
+                    audio, 
+                    language=VOICE_LANGUAGE,
+                    show_all=False
+                )
+                logger.info(f"Recognized: {text}")
                 return text
                 
             except sr.UnknownValueError:
-                logger.warning("Could not understand command")
-                return None
+                logger.warning(f"Could not understand audio (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                    
             except sr.RequestError as e:
-                logger.error(f"Error with speech recognition service: {e}")
-                return None
+                logger.error(f"Speech recognition service error: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)  # Longer wait on network errors
+                    
             except Exception as e:
-                logger.error(f"Error listening for command: {e}")
-                return None
+                logger.error(f"Error recognizing speech: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+        
+        logger.warning("Speech recognition failed after all retries")
+        return None
+
+    def listen_for_wake_word(self):
+        """
+        Listen for wake word
+        Records audio and checks if wake word is present
+        
+        Returns:
+            bool: True if wake word detected, False otherwise
+        """
+        logger.info(f"Listening for wake word: '{WAKE_WORD}'")
+        
+        # Record audio
+        audio_file = self._record_audio(duration=5)
+        if not audio_file:
+            logger.error("Failed to record audio")
+            return False
+        
+        # Recognize speech
+        text = self._recognize_from_file(audio_file)
+        if not text:
+            logger.warning("Could not recognize speech")
+            return False
+        
+        # Check for wake word (case insensitive)
+        if WAKE_WORD.lower() in text.lower():
+            logger.info("Wake word detected!")
+            return True
+        
+        logger.debug(f"Wake word not found in: {text}")
+        return False
+
+    def listen_for_command(self):
+        """
+        Listen for voice commands
+        Records and recognizes command
+        
+        Returns:
+            str: Recognized command, or None if not understood
+        """
+        logger.info(f"Listening for command ({LISTEN_TIMEOUT}s)...")
+        
+        # Record audio
+        audio_file = self._record_audio(duration=LISTEN_TIMEOUT)
+        if not audio_file:
+            logger.error("Failed to record audio")
+            return None
+        
+        # Check file size
+        file_size = os.path.getsize(audio_file)
+        if file_size < 10000:  # Less than 10KB is likely just silence
+            logger.warning(f"Audio file too small ({file_size} bytes) - might be silence")
+        
+        # Recognize speech
+        text = self._recognize_from_file(audio_file)
+        if not text:
+            logger.warning("Could not recognize command")
+            return None
+        
+        # Check for close word
+        if CLOSE_WORD.lower() in text.lower():
+            logger.info("Close word detected - shutting down")
+            return CLOSE_WORD
+        
+        return text
 
     def listen_for_search_query(self):
         """
         Listen for search or music queries
-        Returns the spoken text
-        """
-        logger.info("Listening for query...")
         
-        with self.microphone as source:
-            try:
-                audio = self.recognizer.listen(source, timeout=LISTEN_TIMEOUT)
-                text = self.recognizer.recognize_google(audio, language=VOICE_LANGUAGE)
-                logger.info(f"Query received: {text}")
-                return text
-                
-            except sr.UnknownValueError:
-                logger.warning("Could not understand query")
-                return None
-            except sr.RequestError as e:
-                logger.error(f"Error with speech recognition service: {e}")
-                return None
-            except Exception as e:
-                logger.error(f"Error listening for query: {e}")
-                return None
+        Returns:
+            str: Recognized query, or None if not understood
+        """
+        logger.info(f"Listening for query ({LISTEN_TIMEOUT}s)...")
+        
+        # Record audio
+        audio_file = self._record_audio(duration=LISTEN_TIMEOUT)
+        if not audio_file:
+            logger.error("Failed to record audio")
+            return None
+        
+        # Recognize speech
+        return self._recognize_from_file(audio_file)
 
 
 # Simple test
@@ -123,16 +197,34 @@ if __name__ == "__main__":
     print("Voice Input Module Test")
     print("=" * 50)
     
-    voice = VoiceInput()
-    
-    print("\nTesting wake word detection...")
-    print(f"Say something with '{WAKE_WORD}' in it...")
-    if voice.listen_for_wake_word():
-        print("✓ Wake word detected!")
+    try:
+        voice = VoiceInput()
         
-        print(f"\nNow say a command...")
-        command = voice.listen_for_command()
-        if command:
-            print(f"✓ Command received: {command}")
-    else:
-        print("✗ Wake word not detected")
+        print("\nTesting wake word detection...")
+        print(f"Say something with '{WAKE_WORD}' in it (5 seconds)...")
+        if voice.listen_for_wake_word():
+            print("✓ Wake word detected!")
+            
+            print(f"\nNow say a command ({LISTEN_TIMEOUT} seconds)...")
+            print("Example commands:")
+            print("  - 'What time is it?'")
+            print("  - 'Move forward'")
+            print("  - 'Play music'")
+            
+            command = voice.listen_for_command()
+            if command:
+                print(f"✓ Command received: {command}")
+            else:
+                print("✗ No command recognized")
+                print("\nTroubleshooting:")
+                print("  - Speak more clearly")
+                print("  - Speak louder")
+                print("  - Check microphone volume: alsamixer -c 3")
+            
+        else:
+            print("✗ Wake word not detected")
+            
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        import traceback
+        traceback.print_exc()

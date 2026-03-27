@@ -2,13 +2,13 @@
 # All settings and constants are defined here for easy modification
 
 # ==================== ROBOT SETTINGS ====================
-ROBOT_NAME = "Maahi"
-WAKE_WORD = "hello maahi"  # Wake word to activate robot
+ROBOT_NAME = "Mahi"
+WAKE_WORD = "hello Mahi"  # Wake word to activate robot
 CLOSE_WORD = "bye"  # Word to deactivate robot
 RESPONSE_VOICE = "female"  # Indian female voice
 
 # ==================== GROQ API SETTINGS ====================
-GROQ_API_KEY = "your_groq_api_key_here"  # Replace with your actual Groq API key
+GROQ_API_KEY = "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"  # Replace with your actual Groq API key
 GROQ_MODEL = "mixtral-8x7b-32768"  # Groq model to use
 GROQ_TEMPERATURE = 0.7  # Response creativity (0-1)
 
@@ -16,7 +16,7 @@ GROQ_TEMPERATURE = 0.7  # Response creativity (0-1)
 AUDIO_RATE = 16000  # Sample rate for audio
 AUDIO_CHUNK = 1024  # Chunk size for audio processing
 AUDIO_CHANNELS = 1  # Mono audio
-VOICE_LANGUAGE = "hi-IN"  # Indian English
+VOICE_LANGUAGE = "en-IN"  # Indian English
 LISTEN_TIMEOUT = 10  # Seconds to listen for voice command
 SPEECH_THRESHOLD = 0.5  # Noise threshold
 
